@@ -1,3 +1,40 @@
+class GridMap {
+    // https://stackoverflow.com/a/43593634
+    // Written by Nitzan Tomer as an answer for ZackDeRose. Slightly modified.
+    private map = new Map<string, Cell>();
+
+    set(key: [number, number], value: Cell): this {
+        this.map.set(JSON.stringify(key), value);
+        return this;
+    }
+
+    get(key: [number, number]): Cell | undefined {
+        return this.map.get(JSON.stringify(key));
+    }
+
+    clear() {
+        this.map.clear();
+    }
+
+    delete(key: [number, number]): boolean {
+        return this.map.delete(JSON.stringify(key));
+    }
+
+    has(key: [number, number]): boolean {
+        return this.map.has(JSON.stringify(key));
+    }
+
+    get size() {
+        return this.map.size;
+    }
+
+    * [Symbol.iterator]() {
+        for (let [stringKey, value] of this.map) {
+            yield [JSON.parse(stringKey), value];
+        }
+    }
+}
+
 class GridPoint {
     constructor(public x: number, public y: number) { }
     static pt([x, y]: [number, number]) : GridPoint {
@@ -21,9 +58,9 @@ class GridPoint {
 }
 
 class Grid {
-    content: Map<[number, number], Cell>;
+    content: GridMap;
     constructor() {
-        this.content = new Map();
+        this.content = new GridMap();
         this.content.set([2, 3], new Cell(false, false));
         this.content.set([2, 5], new Cell(true, true));
         this.content.set([3, 4], new Cell(true, false));
@@ -142,6 +179,7 @@ stage.y = offset.y;
 
 
 for (let [point, cell] of myGrid.iter()) {
+    console.log(point, cell);
     let visibleHex = makeHexagon(0.9);
     let interactiveHex = makeHexagon();
 
