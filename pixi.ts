@@ -3,12 +3,12 @@ class GridMap {
     // Written by Nitzan Tomer as an answer for ZackDeRose. Slightly modified.
     private map = new Map<string, Cell>();
 
-    set(key: [number, number], value: Cell): this {
+    set(key: GridPoint, value: Cell): this {
         this.map.set(JSON.stringify(key), value);
         return this;
     }
 
-    get(key: [number, number]): Cell | undefined {
+    get(key: GridPoint): Cell | undefined {
         return this.map.get(JSON.stringify(key));
     }
 
@@ -16,11 +16,11 @@ class GridMap {
         this.map.clear();
     }
 
-    delete(key: [number, number]): boolean {
+    delete(key: GridPoint): boolean {
         return this.map.delete(JSON.stringify(key));
     }
 
-    has(key: [number, number]): boolean {
+    has(key: GridPoint): boolean {
         return this.map.has(JSON.stringify(key));
     }
 
@@ -28,23 +28,18 @@ class GridMap {
         return this.map.size;
     }
 
-    * [Symbol.iterator]() {
+    * [Symbol.iterator]() : IterableIterator<[GridPoint, Cell]> {
         for (let [stringKey, value] of this.map) {
-            yield [JSON.parse(stringKey), value];
+            let objectKey = JSON.parse(stringKey);
+            yield [new GridPoint(objectKey.x, objectKey.y), value];
         }
     }
 }
 
 class GridPoint {
     constructor(public x: number, public y: number) { }
-    static pt([x, y]: [number, number]) : GridPoint {
-        return new GridPoint(x, y)
-    }
     get pixel(): PIXI.Point {
         return new PIXI.Point(1.5 * this.x, 0.866 * this.y);
-    }
-    get tuple(): [number, number] {
-        return [this.x, this.y];
     }
     // Iterates over all neighboring coordinates, starting to the top going clockwise.
     * nbhd () {
@@ -61,23 +56,17 @@ class Grid {
     content: GridMap;
     constructor() {
         this.content = new GridMap();
-        this.content.set([2, 3], new Cell(false, false));
-        this.content.set([2, 5], new Cell(true, true));
-        this.content.set([3, 4], new Cell(true, false));
-        this.content.set([4, 3], new Cell(true, false));
-    }
-    * iter() : IterableIterator<[GridPoint, Cell]>{
-        for (var [pt, cell] of this.content) {
-            yield [new GridPoint(pt[0], pt[1]), cell];
-        }
+        this.content.set(new GridPoint(2, 3), new Cell(false, false));
+        this.content.set(new GridPoint(2, 5), new Cell(true, true));
+        this.content.set(new GridPoint(3, 4), new Cell(true, false));
+        this.content.set(new GridPoint(4, 3), new Cell(true, false));
     }
     makeBoundingPoints() : {x : BoundingInterval, y: BoundingInterval} {
         let x = new BoundingInterval();
         let y = new BoundingInterval();
-        for (var [pt, cell] of this.content) {
-            let pixel = new GridPoint(pt[0], pt[1]).pixel;
-            x.add(pixel.x);
-            y.add(pixel.y);
+        for (var [point, cell] of this.content) {
+            x.add(point.pixel.x);
+            y.add(point.pixel.y);
         }
         return {x, y};
     }
@@ -100,10 +89,10 @@ class Grid {
     // Precalculate all the captions and store them in the cells.
     makeCaptions() : void {
         // Right now I only support plain hints
-        for (var [point, cell] of this.iter()) {
+        for (var [point, cell] of this.content) {
             console.log("Nbhd of:", point);
             for (let neighbor of point.nbhd()) {
-                console.log(neighbor, this.content.get(neighbor.tuple));
+                console.log(neighbor, this.content.get(neighbor));
             }
         }
     }
@@ -178,7 +167,7 @@ stage.y = offset.y;
 
 
 
-for (let [point, cell] of myGrid.iter()) {
+for (let [point, cell] of myGrid.content) {
     console.log(point, cell);
     let visibleHex = makeHexagon(0.9);
     let interactiveHex = makeHexagon();
