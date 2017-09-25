@@ -60,6 +60,8 @@ class Grid {
         this.content.set(new GridPoint(2, 5), new Cell(true, true));
         this.content.set(new GridPoint(3, 4), new Cell(true, false));
         this.content.set(new GridPoint(4, 3), new Cell(true, false));
+
+        this.makeCaptions();
     }
     makeBoundingPoints() : {x : BoundingInterval, y: BoundingInterval} {
         let x = new BoundingInterval();
@@ -90,10 +92,16 @@ class Grid {
     makeCaptions() : void {
         // Right now I only support plain hints
         for (var [point, cell] of this.content) {
-            console.log("Nbhd of:", point);
+            let count : number = 0;
             for (let neighbor of point.nbhd()) {
-                console.log(neighbor, this.content.get(neighbor));
+                let nbhdCell = this.content.get(neighbor);
+                if (nbhdCell != undefined) {
+                    if (nbhdCell.mine) {
+                        count += 1;
+                    }
+                }
             }
+            cell.caption = count.toString();
         }
     }
 }
@@ -128,7 +136,7 @@ class Cell {
             if (this.mine) {
                 return 0x0000FF
             } else {
-                return 0x555555
+                return 0xaaaaaa
             }
         }
     }
@@ -166,18 +174,24 @@ stage.x = offset.x;
 stage.y = offset.y;
 
 
-
 for (let [point, cell] of myGrid.content) {
     console.log(point, cell);
     let visibleHex = makeHexagon(0.9);
     let interactiveHex = makeHexagon();
-
+    
     // Add the hexagon to the stage
     let graphics = new PIXI.Graphics();
-
+    
     // visible part
     graphics.beginFill(cell.baseColor());
     graphics.drawPolygon(visibleHex);
+
+    let virtualFontSize = 256
+    let text = new PIXI.Text(cell.caption, {fontFamily : 'Arial', fontSize: virtualFontSize, fill : 0x000000, align : 'center'});
+    text.anchor.x = 0.5
+    text.anchor.y = 0.5
+    text.scale = new PIXI.Point(1/virtualFontSize, 1/virtualFontSize)
+    graphics.addChild(text);
 
     graphics.position = point.pixel;
 
@@ -185,7 +199,7 @@ for (let [point, cell] of myGrid.content) {
     graphics.hitArea = visibleHex;
     graphics.interactive = true;
     graphics.on("click", (event) => {
-        console.log(graphics.children);
+        console.log(cell.caption);
     });
 
     app.stage.addChild(graphics);
