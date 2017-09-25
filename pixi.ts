@@ -129,15 +129,22 @@ class BoundingInterval {
 class Cell {
     caption : string; // Precomputed caption
     constructor(public revealed: boolean, public mine: boolean) {}
-    baseColor() : number {
+    get baseColor() : number {
         if (!this.revealed) {
-            return 0xFFFF00
+            return 0xEEAA00
         } else {
             if (this.mine) {
                 return 0x0000FF
             } else {
-                return 0xaaaaaa
+                return 0xcccccc
             }
+        }
+    }
+    get hoverColor() : number {
+        if (!this.revealed) {
+            return 0xEEAAEE
+        } else {
+            return this.baseColor
         }
     }
 }
@@ -175,32 +182,38 @@ stage.y = offset.y;
 
 
 for (let [point, cell] of myGrid.content) {
-    console.log(point, cell);
     let visibleHex = makeHexagon(0.9);
     let interactiveHex = makeHexagon();
     
+    let container = new PIXI.Container();
+
     // Add the hexagon to the stage
-    let graphics = new PIXI.Graphics();
+    let hex = new PIXI.Graphics();
+    container.addChild(hex)
     
     // visible part
-    graphics.beginFill(cell.baseColor());
-    graphics.drawPolygon(visibleHex);
+    hex.beginFill(0xFFFFFF);
+    hex.tint = cell.baseColor;
+    hex.drawPolygon(visibleHex);
 
     let virtualFontSize = 256
     let text = new PIXI.Text(cell.caption, {fontFamily : 'Arial', fontSize: virtualFontSize, fill : 0x000000, align : 'center'});
     text.anchor.x = 0.5
     text.anchor.y = 0.5
     text.scale = new PIXI.Point(1/virtualFontSize, 1/virtualFontSize)
-    graphics.addChild(text);
+    container.addChild(text);
 
-    graphics.position = point.pixel;
+    container.position = point.pixel;
 
     // interactive part
-    graphics.hitArea = visibleHex;
-    graphics.interactive = true;
-    graphics.on("click", (event) => {
-        console.log(cell.caption);
-    });
+    container.hitArea = visibleHex;
+    container.interactive = true;
+    container.on("mouseover", (event) => {
+        hex.tint = cell.hoverColor;
+    })
+    container.on("mouseout", (event) => {
+        hex.tint = cell.baseColor;
+    })
 
-    app.stage.addChild(graphics);
+    app.stage.addChild(container);
 }
