@@ -43,12 +43,20 @@ class GridPoint {
     }
     // Iterates over all neighboring coordinates, starting to the top going clockwise.
     * nbhd() {
-        yield new GridPoint(this.x, this.y - 2);
-        yield new GridPoint(this.x + 1, this.y - 1);
-        yield new GridPoint(this.x + 1, this.y + 1);
-        yield new GridPoint(this.x, this.y + 2);
-        yield new GridPoint(this.x - 1, this.y + 1);
-        yield new GridPoint(this.x - 1, this.y - 1);
+        let nbhdOffsets: Array<[number, number]> = [
+            [0, -2], [1, -1], [1, 1], [0, 2], [-1, 1], [-1, -1]]
+        for (let [x, y] of nbhdOffsets) {
+            yield new GridPoint(this.x + x, this.y + y)
+        }
+    }
+    * bigNbhd() {
+        let bigNbhdOffsets: Array<[number, number]> = [
+            [-1, -1], [0, -2], [1, -1], [1, 1], [0, 2], [-1, 1], [0, 4],
+            [1, 3], [2, 2], [2, 0], [2, -2], [1, -3], [0, -4], [-1, -3],
+            [-2, -2], [-2, 0], [-2, 2], [-1, 3]]
+        for (let [x, y] of bigNbhdOffsets) {
+            yield new GridPoint(this.x + x, this.y + y)
+        }
     }
 }
 
@@ -96,40 +104,57 @@ class Grid {
     makeCaptions(): void {
         // Right now I only support plain hints
         for (var [point, cell] of this.content) {
-            let count: number = 0;
-            if (cell.hintType === null) {
-                cell.caption = "?"
-            } else if (cell.hintType == "simple") {
-                for (let neighbor of point.nbhd()) {
-                    let nbhdCell = this.content.get(neighbor);
-                    if (nbhdCell != undefined && nbhdCell.mine) {
-                        count += 1;
+            if (cell.mine) {
+                if (cell.hintType == "simple") {
+                    let count: number = 0;
+                    for (let neighbor of point.bigNbhd()) {
+                        let nbhdCell = this.content.get(neighbor);
+                        if (nbhdCell != undefined && nbhdCell.mine) {
+                            count += 1;
+                        }
                     }
-                }
-                cell.caption = count.toString();
-            } else if (cell.hintType == "typed") {
-                // This counts how often two mines / empty spaces are adjacent to each other
-                let adjacentPairCounter = 0
-                let lastWasMine = null
-                for (let neighbor of point.nbhd()) {
-                    let nbhdCell = this.content.get(neighbor);
-                    let thisIsMine
-                    if (nbhdCell != undefined && nbhdCell.mine) {
-                        count += 1;
-                        thisIsMine = true
-                    } else { thisIsMine = false }
-                    
-                    console.log(lastWasMine, thisIsMine)
-                    if (thisIsMine == lastWasMine) { adjacentPairCounter += 1 }
-                    lastWasMine = thisIsMine
-                }
-                // If the first and last cell match, then we didn't detect this.
-                // If all mines are connected, then there are 4 or 6 matches of which we detect at least 3.
-                // If there are two groups of mines, there are are at most 2 matches.
-                if (adjacentPairCounter >= 3) {
-                    cell.caption = "{" + count.toString() + "}"
+                    cell.caption = count.toString();
                 } else {
-                    cell.caption = "-" + count.toString() + "-"
+                    // This caption should never be displayed.
+                    cell.caption = "Error!"
+                }
+            } else {
+                if (cell.hintType === null) {
+                    cell.caption = "?"
+                } else if (cell.hintType == "simple") {
+                    let count: number = 0;
+                    for (let neighbor of point.nbhd()) {
+                        let nbhdCell = this.content.get(neighbor);
+                        if (nbhdCell != undefined && nbhdCell.mine) {
+                            count += 1;
+                        }
+                    }
+                    cell.caption = count.toString();
+                } else if (cell.hintType == "typed") {
+                    let count: number = 0;
+                    // This counts how often two mines / empty spaces are adjacent to each other
+                    let adjacentPairCounter = 0
+                    let lastWasMine = null
+                    for (let neighbor of point.nbhd()) {
+                        let nbhdCell = this.content.get(neighbor);
+                        let thisIsMine
+                        if (nbhdCell != undefined && nbhdCell.mine) {
+                            count += 1;
+                            thisIsMine = true
+                        } else { thisIsMine = false }
+
+                        console.log(lastWasMine, thisIsMine)
+                        if (thisIsMine == lastWasMine) { adjacentPairCounter += 1 }
+                        lastWasMine = thisIsMine
+                    }
+                    // If the first and last cell match, then we didn't detect this.
+                    // If all mines are connected, then there are 4 or 6 matches of which we detect at least 3.
+                    // If there are two groups of mines, there are are at most 2 matches.
+                    if (adjacentPairCounter >= 3) {
+                        cell.caption = "{" + count.toString() + "}"
+                    } else {
+                        cell.caption = "-" + count.toString() + "-"
+                    }
                 }
             }
         }
@@ -189,6 +214,21 @@ class Cell {
             return this.baseColor
         }
     }
+    get textColor(): number {
+        if (this.hintEnabled) {
+            if (this.mine) {
+                return 0xFFFFFF
+            } else {
+                return 0x000000
+            }
+        } else {
+            if (this.mine) {
+                return 0x5050FF
+            } else {
+                return 0xAAAAAA
+            }
+        }
+    }
     get interactionLevel(): InteractionLevel {
         if (!this.revealed) {
             return InteractionLevel.buttonMode
@@ -199,7 +239,7 @@ class Cell {
         }
     }
     get captionVisible(): boolean {
-        return this.revealed && !this.mine
+        return this.revealed && (this.hintType !== null)
     }
     makeContainer(): PIXI.Container {
         // Creates the PIXI container and all the contained objects.
@@ -257,11 +297,8 @@ class Cell {
         if (!this.hovered) { this.hex.tint = this.baseColor }
         else { this.hex.tint = this.hoverColor }
 
-        if (this.hintEnabled) { this.text.tint = 0x000000 }
-        else { this.text.tint = 0xAAAAAA }
-
-
         this.text.visible = this.captionVisible
+        this.text.tint = this.textColor
 
         switch (this.interactionLevel) {
             case InteractionLevel.buttonMode:
@@ -337,7 +374,8 @@ O+..On..\n\
 ..x...o.\n\
 o+..x...\n\
 ..O+....\n\
-....x..."
+....x...\n\
+..x+...."
 
 let exampleLevel = parseLevelFile(exampleLevelString)[0]
 let myGrid = new Grid(exampleLevel);
