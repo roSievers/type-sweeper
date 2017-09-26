@@ -189,13 +189,17 @@ enum InteractionLevel {
 }
 
 class Cell {
-    caption: string; // Precomputed caption
     container: PIXI.Container
-    hex: PIXI.Graphics
-    hintEnabled: boolean = true
+    caption: string // Precomputed caption
     text: PIXI.Text
+    hex: PIXI.Graphics
     hovered: boolean = false
-    constructor(public revealed: boolean, public mine: boolean, public hintType: null | "simple" | "typed") { }
+    hintEnabled: boolean = true
+    // The overlay of mines which indicates the region they count.
+    regionOverlay: PIXI.Graphics
+    regionOverlayVisible: boolean = false
+    constructor(public revealed: boolean, public mine: boolean,
+        public hintType: null | "simple" | "typed") { }
     get baseColor(): number {
         if (!this.revealed) {
             return 0xEEAA00
@@ -241,7 +245,7 @@ class Cell {
     get captionVisible(): boolean {
         return this.revealed && (this.hintType !== null)
     }
-    makeContainer(): PIXI.Container {
+    makeContainer(): [PIXI.Container, PIXI.Graphics] {
         // Creates the PIXI container and all the contained objects.
         // The objects are creates such that all visual changes can be
         // applied by only changing properties.
@@ -257,6 +261,11 @@ class Cell {
         this.hex.drawPolygon(makeHexagon(0.9))
         this.container.addChild(this.hex)
 
+        // Create region overlay
+        this.regionOverlay = new PIXI.Graphics
+        this.regionOverlay.beginFill(0xCCCCFF)
+        this.regionOverlay.drawPolygon(makeRegionOverview())
+        this.regionOverlay.alpha = 0.5
 
         // Add the text
         let virtualFontSize = 256
@@ -278,7 +287,12 @@ class Cell {
             this.updateGraphicProperties()
         })
         this.container.on("click", (event) => {
-            this.tryRevealEmpty()
+            if (this.interactionLevel == InteractionLevel.shadowHint) {
+                this.regionOverlayVisible = !this.regionOverlayVisible
+                this.updateGraphicProperties()
+            } else {
+                this.tryRevealEmpty()
+            }
         })
         this.container.on("rightclick", (event) => {
             if (this.interactionLevel == InteractionLevel.shadowHint) {
@@ -291,7 +305,7 @@ class Cell {
 
         this.updateGraphicProperties()
 
-        return this.container
+        return [this.container, this.regionOverlay]
     }
     updateGraphicProperties(): void {
         if (!this.hovered) { this.hex.tint = this.baseColor }
@@ -299,6 +313,8 @@ class Cell {
 
         this.text.visible = this.captionVisible
         this.text.tint = this.textColor
+
+        this.regionOverlay.visible = this.regionOverlayVisible
 
         switch (this.interactionLevel) {
             case InteractionLevel.buttonMode:
@@ -347,6 +363,18 @@ function makeHexagon(radius: number = 1): PIXI.Polygon {
     ]);
 }
 
+function makeRegionOverview(): PIXI.Polygon {
+    let alpha = Math.sqrt(3) / 2;
+    let points = [
+        [0.5, 4.33], [1, 3.464], [2, 3.464], [2.5, 2.598], [3.5, 2.598],
+        [4, 1.732], [3.5, 0.866], [4, 0], [3.5, -0.866], [4, -1.732],
+        [3.5, -2.598], [2.5, -2.598], [2, -3.464], [1, -3.464], [0.5, -4.33],
+        [- 0.5, -4.33], [-1, -3.464], [-2, -3.464], [-2.5, -2.598],
+        [-3.5, -2.598], [-4, -1.732], [-3.5, -0.866], [-4, 0], [-3.5, 0.866],
+        [-4, 1.732], [-3.5, 2.598], [-2.5, 2.598], [-2, 3.464], [-1, 3.464],
+        [-0.5, 4.33]]
+    return new PIXI.Polygon(points.map(([x, y]) => new PIXI.Point(x, y)))
+}
 
 interface ParsedLevel {
     title: string,
@@ -403,11 +431,18 @@ stage.scale = new PIXI.Point(scale, scale);
 stage.x = offset.x;
 stage.y = offset.y;
 
+let cellLayer = new PIXI.Container();
+let overlayLayer = new PIXI.Container();
+app.stage.addChild(cellLayer)
+app.stage.addChild(overlayLayer)
 for (let [point, cell] of myGrid.content) {
-    let container = cell.makeContainer()
+    let [container, overlay] = cell.makeContainer()
 
     // Position the container at the correct game location
     container.position = point.pixel
-    app.stage.addChild(container)
+    overlay.position = point.pixel
+
+    cellLayer.addChild(container)
+    overlayLayer.addChild(overlay)
 }
 
