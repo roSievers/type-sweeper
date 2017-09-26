@@ -60,6 +60,7 @@ class Grid {
         this.content.set(new GridPoint(2, 5), new Cell(true, true));
         this.content.set(new GridPoint(3, 4), new Cell(true, false));
         this.content.set(new GridPoint(4, 3), new Cell(true, false));
+        this.content.set(new GridPoint(4, 5), new Cell(false, true));
 
         this.makeCaptions();
     }
@@ -126,8 +127,19 @@ class BoundingInterval {
     }
 }
 
+enum InteractionLevel {
+    buttonMode,
+    shadowHint,
+    noInteraction
+}
+
 class Cell {
     caption: string; // Precomputed caption
+    container: PIXI.Container
+    hex: PIXI.Graphics
+    hintEnabled: boolean = true
+    text: PIXI.Text
+    hovered: boolean = false
     constructor(public revealed: boolean, public mine: boolean) { }
     get baseColor(): number {
         if (!this.revealed) {
@@ -147,16 +159,112 @@ class Cell {
             return this.baseColor
         }
     }
-    get interactive(): boolean {
+    get interactionLevel(): InteractionLevel {
         if (!this.revealed) {
-            return true
+            return InteractionLevel.buttonMode
+        } else if (this.captionVisible) {
+            return InteractionLevel.shadowHint
         } else {
-            return false
+            return InteractionLevel.noInteraction
         }
     }
     get captionVisible(): boolean {
-        console.log("asked about revealed: ", this)
-        return this.revealed
+        return this.revealed && !this.mine
+    }
+    makeContainer(): PIXI.Container {
+        // Creates the PIXI container and all the contained objects.
+        // The objects are creates such that all visual changes can be
+        // applied by only changing properties.
+        if (this.container != undefined) {
+            console.error("The cell's container should only be initialized once!")
+        }
+        this.container = new PIXI.Container()
+
+
+        // Add the hexagon to the container
+        this.hex = new PIXI.Graphics()
+        this.hex.beginFill(0xFFFFFF)
+        this.hex.drawPolygon(makeHexagon(0.9))
+        this.container.addChild(this.hex)
+
+
+        // Add the text
+        let virtualFontSize = 256
+        this.text = new PIXI.Text(this.caption, { fontFamily: 'Arial', fontSize: virtualFontSize, fill: 0xFFFFFF, align: 'center' })
+        this.text.anchor.x = 0.5
+        this.text.anchor.y = 0.5
+        this.text.scale = new PIXI.Point(1 / virtualFontSize, 1 / virtualFontSize)
+        this.container.addChild(this.text)
+
+
+        // Hook in event handlers
+        this.container.hitArea = makeHexagon(1)
+        this.container.on("mouseover", (event) => {
+            this.hovered = true
+            this.updateGraphicProperties()
+        })
+        this.container.on("mouseout", (event) => {
+            this.hovered = false
+            this.updateGraphicProperties()
+        })
+        this.container.on("click", (event) => {
+            this.tryRevealEmpty()
+        })
+        this.container.on("rightclick", (event) => {
+            if (this.interactionLevel == InteractionLevel.shadowHint) {
+                this.hintEnabled = !this.hintEnabled
+                this.updateGraphicProperties()
+            } else {
+                this.tryRevealMine()
+            }
+        })
+
+        this.updateGraphicProperties()
+
+        return this.container
+    }
+    updateGraphicProperties(): void {
+        if (!this.hovered) { this.hex.tint = this.baseColor }
+        else { this.hex.tint = this.hoverColor }
+
+        if (this.hintEnabled) { this.text.tint = 0x000000 }
+        else { this.text.tint = 0xAAAAAA }
+
+
+        this.text.visible = this.captionVisible
+
+        switch (this.interactionLevel) {
+            case InteractionLevel.buttonMode:
+                this.container.interactive = true
+                this.container.buttonMode = true
+                break;
+            case InteractionLevel.shadowHint:
+                this.container.interactive = true
+                this.container.buttonMode = false
+                break;
+            case InteractionLevel.noInteraction:
+                this.container.interactive = false
+                break;
+        }
+    }
+    tryRevealEmpty(): void {
+        if (this.revealed) { console.error("Tried to reval an already revealed hex.") }
+        if (!this.mine) {
+            this.revealed = true
+            this.updateGraphicProperties()
+        } else {
+            // TODO: inform some object about the player error.
+        }
+    }
+    tryRevealMine() : void {
+        if (this.revealed) { console.error("Tried to reval an already revealed hex.") }
+        if (this.mine) {
+            this.revealed = true
+            this.updateGraphicProperties()
+            // TODO: inform global counter
+        } else {
+            // TODO: inform some object about the player error.
+        }
     }
 }
 
@@ -177,6 +285,11 @@ function makeHexagon(radius: number = 1): PIXI.Polygon {
 let app = new PIXI.Application(1000, 600, { backgroundColor: 0xffffff, antialias: true });
 document.body.appendChild(app.view);
 
+// Suppress the context menu
+app.view.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+});
+
 app.renderer.view.style.border = "1px dashed black";
 
 // Actually rendering my app
@@ -193,46 +306,9 @@ stage.y = offset.y;
 
 
 for (let [point, cell] of myGrid.content) {
-    let container = new PIXI.Container()
-
-    // Add the hexagon to the container
-    let hex = new PIXI.Graphics()
-    container.addChild(hex)
-    hex.beginFill(0xFFFFFF)
-    hex.tint = cell.baseColor
-    hex.drawPolygon(makeHexagon(0.9))
-
-    // Add the text
-    let virtualFontSize = 256
-    let text = new PIXI.Text(cell.caption, { fontFamily: 'Arial', fontSize: virtualFontSize, fill: 0x000000, align: 'center' })
-    text.anchor.x = 0.5
-    text.anchor.y = 0.5
-    text.scale = new PIXI.Point(1 / virtualFontSize, 1 / virtualFontSize)
-    container.addChild(text)
-    text.visible = cell.captionVisible
-
+    let container = cell.makeContainer()
 
     // Position the container at the correct game location
     container.position = point.pixel
     app.stage.addChild(container)
-
-    // interactive part
-    // TODO: With disabling eyecandy, this is more complicated. Some objects should be
-    // interactive but not show the button mode and have no hover effect.
-    if (cell.interactive) {
-        container.buttonMode = true
-        container.hitArea = makeHexagon(1)
-        container.interactive = true
-        container.on("mouseover", (event) => {
-            hex.tint = cell.hoverColor
-        })
-        container.on("mouseout", (event) => {
-            hex.tint = cell.baseColor
-        })
-        // TODO: I think that revealing the one hidden tile would be a good thing now
-        container.on("click", (event) => {
-            console.log(event)
-        })
-    }
-
 }
