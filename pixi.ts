@@ -243,7 +243,11 @@ class Cell {
         }
     }
     get captionVisible(): boolean {
-        return this.revealed && (this.hintType !== null)
+        if (this.mine) {
+            return this.revealed && (this.hintType !== null)
+        } else {
+            return this.revealed
+        }
     }
     makeContainer(): [PIXI.Container, PIXI.Graphics] {
         // Creates the PIXI container and all the contained objects.
@@ -287,7 +291,7 @@ class Cell {
             this.updateGraphicProperties()
         })
         this.container.on("click", (event) => {
-            if (this.interactionLevel == InteractionLevel.shadowHint) {
+            if (this.interactionLevel == InteractionLevel.shadowHint && this.mine && this.hintType == "simple") {
                 this.regionOverlayVisible = !this.regionOverlayVisible
                 this.updateGraphicProperties()
             } else {
@@ -296,7 +300,12 @@ class Cell {
         })
         this.container.on("rightclick", (event) => {
             if (this.interactionLevel == InteractionLevel.shadowHint) {
-                this.hintEnabled = !this.hintEnabled
+                if (this.hintEnabled) {
+                    this.hintEnabled = false
+                    this.regionOverlayVisible = false
+                } else {
+                    this.hintEnabled = true
+                }
                 this.updateGraphicProperties()
             } else {
                 this.tryRevealMine()
@@ -439,6 +448,8 @@ for (let [point, cell] of myGrid.content) {
     let [container, overlay] = cell.makeContainer()
 
     // Position the container at the correct game location
+    // Instead of two layers, this could also use a zOrder trick.
+    // https://github.com/pixijs/pixi.js/issues/3999
     container.position = point.pixel
     overlay.position = point.pixel
 
