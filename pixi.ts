@@ -59,9 +59,8 @@ class Grid {
 
         levelData.grid.forEach((row, i) => {
             row.forEach((cell, j) => {
-                console.log(i, j, cell)
                 if (cell != null) {
-                    this.content.set(new GridPoint(j, i), new Cell(cell.revealed, cell.mine))
+                    this.content.set(new GridPoint(j, i), new Cell(cell.revealed, cell.mine, cell.hint))
                 }
             })
         })
@@ -98,15 +97,41 @@ class Grid {
         // Right now I only support plain hints
         for (var [point, cell] of this.content) {
             let count: number = 0;
-            for (let neighbor of point.nbhd()) {
-                let nbhdCell = this.content.get(neighbor);
-                if (nbhdCell != undefined) {
-                    if (nbhdCell.mine) {
+            if (cell.hintType === null) {
+                cell.caption = "?"
+            } else if (cell.hintType == "simple") {
+                for (let neighbor of point.nbhd()) {
+                    let nbhdCell = this.content.get(neighbor);
+                    if (nbhdCell != undefined && nbhdCell.mine) {
                         count += 1;
                     }
                 }
+                cell.caption = count.toString();
+            } else if (cell.hintType == "typed") {
+                // This counts how often two mines / empty spaces are adjacent to each other
+                let adjacentPairCounter = 0
+                let lastWasMine = null
+                for (let neighbor of point.nbhd()) {
+                    let nbhdCell = this.content.get(neighbor);
+                    let thisIsMine
+                    if (nbhdCell != undefined && nbhdCell.mine) {
+                        count += 1;
+                        thisIsMine = true
+                    } else { thisIsMine = false }
+                    
+                    console.log(lastWasMine, thisIsMine)
+                    if (thisIsMine == lastWasMine) { adjacentPairCounter += 1 }
+                    lastWasMine = thisIsMine
+                }
+                // If the first and last cell match, then we didn't detect this.
+                // If all mines are connected, then there are 4 or 6 matches of which we detect at least 3.
+                // If there are two groups of mines, there are are at most 2 matches.
+                if (adjacentPairCounter >= 3) {
+                    cell.caption = "{" + count.toString() + "}"
+                } else {
+                    cell.caption = "-" + count.toString() + "-"
+                }
             }
-            cell.caption = count.toString();
         }
     }
 }
@@ -145,7 +170,7 @@ class Cell {
     hintEnabled: boolean = true
     text: PIXI.Text
     hovered: boolean = false
-    constructor(public revealed: boolean, public mine: boolean) { }
+    constructor(public revealed: boolean, public mine: boolean, public hintType: null | "simple" | "typed") { }
     get baseColor(): number {
         if (!this.revealed) {
             return 0xEEAA00
@@ -261,7 +286,7 @@ class Cell {
             // TODO: inform some object about the player error.
         }
     }
-    tryRevealMine() : void {
+    tryRevealMine(): void {
         if (this.revealed) { console.error("Tried to reval an already revealed hex.") }
         if (this.mine) {
             this.revealed = true
@@ -299,7 +324,7 @@ interface ParsedCell {
 }
 
 // TODO: Use the parser I just wrote
-function parseLevelFile(file: string) : Array<ParsedLevel> {
+function parseLevelFile(file: string): Array<ParsedLevel> {
     let levels = (<any>window).null.parse(file)
     return levels
 }
@@ -308,8 +333,8 @@ let exampleLevelString = "Hexcells level v1\n\
 Basic Example Level\n\
 Rolf Sievers\n\
 \n\
-O+..O+..\n\
-..x...o+\n\
+O+..On..\n\
+..x...o.\n\
 o+..x...\n\
 ..O+....\n\
 ....x..."
