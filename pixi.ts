@@ -54,13 +54,17 @@ class GridPoint {
 
 class Grid {
     content: GridMap;
-    constructor() {
+    constructor(levelData: ParsedLevel) {
         this.content = new GridMap();
-        this.content.set(new GridPoint(2, 3), new Cell(false, false));
-        this.content.set(new GridPoint(2, 5), new Cell(true, true));
-        this.content.set(new GridPoint(3, 4), new Cell(true, false));
-        this.content.set(new GridPoint(4, 3), new Cell(true, false));
-        this.content.set(new GridPoint(4, 5), new Cell(false, true));
+
+        levelData.grid.forEach((row, i) => {
+            row.forEach((cell, j) => {
+                console.log(i, j, cell)
+                if (cell != null) {
+                    this.content.set(new GridPoint(j, i), new Cell(cell.revealed, cell.mine))
+                }
+            })
+        })
 
         this.makeCaptions();
     }
@@ -106,6 +110,7 @@ class Grid {
         }
     }
 }
+
 
 class BoundingInterval {
     public min: number = null;
@@ -281,6 +286,38 @@ function makeHexagon(radius: number = 1): PIXI.Polygon {
 }
 
 
+interface ParsedLevel {
+    title: string,
+    author: string,
+    grid: Array<Array<null | ParsedCell>>
+}
+
+interface ParsedCell {
+    hint: null | "simple" | "typed",
+    mine: boolean,
+    revealed: boolean
+}
+
+// TODO: Use the parser I just wrote
+function parseLevelFile(file: string) : Array<ParsedLevel> {
+    let levels = (<any>window).null.parse(file)
+    return levels
+}
+
+let exampleLevelString = "Hexcells level v1\n\
+Basic Example Level\n\
+Rolf Sievers\n\
+\n\
+O+..O+..\n\
+..x...o+\n\
+o+..x...\n\
+..O+....\n\
+....x..."
+
+let exampleLevel = parseLevelFile(exampleLevelString)[0]
+let myGrid = new Grid(exampleLevel);
+
+
 // Setup for Pixi
 let app = new PIXI.Application(1000, 600, { backgroundColor: 0xffffff, antialias: true });
 document.body.appendChild(app.view);
@@ -294,7 +331,6 @@ app.renderer.view.style.border = "1px dashed black";
 
 // Actually rendering my app
 
-let myGrid = new Grid();
 
 // Zoom into the level.
 let stage = app.stage;
@@ -304,7 +340,6 @@ stage.scale = new PIXI.Point(scale, scale);
 stage.x = offset.x;
 stage.y = offset.y;
 
-
 for (let [point, cell] of myGrid.content) {
     let container = cell.makeContainer()
 
@@ -312,3 +347,4 @@ for (let [point, cell] of myGrid.content) {
     container.position = point.pixel
     app.stage.addChild(container)
 }
+

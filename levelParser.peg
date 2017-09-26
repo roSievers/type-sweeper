@@ -2,7 +2,9 @@
 // =========================
 //
 // Read a level file, the format is human readable.
+// Build this using `pegjs --format globals levelParser.peg`.
 
+// TODO: Parse comments
 
 start
   = level+
