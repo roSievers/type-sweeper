@@ -1,0 +1,45 @@
+// PEG Hexcells level parser
+// =========================
+//
+// Read a level file, the format is human readable.
+
+
+start
+  = level+
+
+level
+  = "Hexcells level v1\n" title:name "\n" author:name "\n"+ grid:grid "\n"*
+  	{return {title: title, author: author, grid: grid}}
+
+name
+  = [^\n]+ {return text()}
+
+grid
+  = (line)+
+
+line
+  = content:cell+ ("\n"?) {return content}
+
+cell
+  = ".." { return null }
+  / occupiedCell
+  / rowCount
+
+firstCellSymbol
+  = "x" { return {mine : true, revealed : false} }
+  / "X" { return {mine : true, revealed : true} }
+  / "o" { return {mine : false, revealed : false} }
+  / "O" { return {mine : false, revealed : true} }
+
+occupiedCell
+  = obj:firstCellSymbol "." { obj.hint = null; return obj }
+  / obj:firstCellSymbol "+" { obj.hint = "simple"; return obj }
+  / obj:firstCellSymbol ("c" / "n") { obj.hint = "typed"; return obj }
+  
+rowCount
+  = "/+" {return {direction: "left", hint: "simple"}}
+  / "|+" {return {direction: "down", hint: "simple"}}
+  / "\\+" {return {direction: "right", hint: "simple"}}
+  / ("/c" / "/n") {return {direction: "left", hint: "typed"}}
+  / ("|c" / "|n") {return {direction: "down", hint: "typed"}}
+  / ("\\c" / "\\n") {return {direction: "right", hint: "typed"}}
