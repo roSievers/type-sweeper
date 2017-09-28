@@ -75,6 +75,15 @@ class Grid {
 
         this.makeCaptions();
     }
+    get hiddenMineCount(): number {
+        let count = 0
+        for (var [_, cell] of this.content) {
+            if (!cell.revealed && cell.mine) {
+                count += 1
+            }
+        }
+        return count
+    }
     makeBoundingPoints(): { x: BoundingInterval, y: BoundingInterval } {
         let x = new BoundingInterval();
         let y = new BoundingInterval();
@@ -198,6 +207,8 @@ class Cell {
     // The overlay of mines which indicates the region they count.
     regionOverlay: PIXI.Graphics
     regionOverlayVisible: boolean = false
+    // Link to the parent game to pass up events
+    parentGame: Game
     constructor(public revealed: boolean, public mine: boolean,
         public hintType: null | "simple" | "typed") { }
     get baseColor(): number {
@@ -249,7 +260,8 @@ class Cell {
             return this.revealed
         }
     }
-    makeContainer(): [PIXI.Container, PIXI.Graphics] {
+    makeContainer(parentGame: Game): [PIXI.Container, PIXI.Graphics] {
+        this.parentGame = parentGame
         // Creates the PIXI container and all the contained objects.
         // The objects are creates such that all visual changes can be
         // applied by only changing properties.
@@ -353,7 +365,7 @@ class Cell {
         if (this.mine) {
             this.revealed = true
             this.updateGraphicProperties()
-            // TODO: inform global counter
+            this.parentGame.onMineReveal()
         } else {
             // TODO: inform some object about the player error.
         }
@@ -385,6 +397,8 @@ function makeRegionOverview(): PIXI.Polygon {
     return new PIXI.Polygon(points.map(([x, y]) => new PIXI.Point(x, y)))
 }
 
+// Parser bindings
+
 interface ParsedLevel {
     title: string,
     author: string,
@@ -397,11 +411,236 @@ interface ParsedCell {
     revealed: boolean
 }
 
-// TODO: Use the parser I just wrote
 function parseLevelFile(file: string): Array<ParsedLevel> {
     let levels = (<any>window).null.parse(file)
     return levels
 }
+
+interface LevelFile {
+    content: string,
+}
+
+class Level {
+    title: string
+    author: string
+    grid: Grid
+    constructor(parsedLevel: ParsedLevel) {
+        this.title = parsedLevel.title
+        this.author = parsedLevel.author
+        this.grid = new Grid(parsedLevel)
+    }
+}
+
+class ContainerLayers {
+    ui: PIXI.Container
+    overlay: PIXI.Container
+    grid: PIXI.Container
+    credits: PIXI.Container
+    constructor(parentContainer: PIXI.Container) {
+        this.ui = new PIXI.Container()
+        this.overlay = new PIXI.Container()
+        this.grid = new PIXI.Container()
+        this.credits = new PIXI.Container()
+        parentContainer.addChild(this.credits)
+        parentContainer.addChild(this.grid)
+        parentContainer.addChild(this.overlay)
+        parentContainer.addChild(this.ui)
+    }
+    clearLevel() {
+        this.overlay.removeChildren()
+        this.grid.removeChildren()
+        this.credits.removeChildren()
+    }
+    applyFit([scale, offset]: [number, PIXI.Point]) {
+        this.overlay.scale = new PIXI.Point(scale, scale)
+        this.overlay.x = offset.x
+        this.overlay.y = offset.y
+        this.grid.scale = new PIXI.Point(scale, scale)
+        this.grid.x = offset.x
+        this.grid.y = offset.y
+    }
+}
+
+class Game {
+    app: PIXI.Application
+    levels: Array<ParsedLevel>
+    currentLevelIndex: number
+    currentLevel: Level
+    layers: ContainerLayers
+    remainingMines: Counter
+    fullscreenButton: FullscreenButton = new FullscreenButton()
+    constructor(game_data: LevelFile) {
+        this.app = new PIXI.Application(1000, 600, { backgroundColor: 0xffffff, antialias: true });
+        setTimeout(() => {
+            this.app.view.width = 1200
+            this.app.view.height = 720
+            this.onResize()
+        }, 2000)
+
+        this.layers = new ContainerLayers(this.app.stage)
+
+        // Suppress the context menu
+        this.app.view.addEventListener('contextmenu', (e) => { e.preventDefault(); });
+
+        this.makeUi()
+
+        // Load first level
+        this.levels = parseLevelFile(game_data.content)
+        this.currentLevelIndex = 0
+        this.loadCurrentLevel()
+    }
+    loadCurrentLevel() {
+        this.currentLevel = new Level(this.levels[this.currentLevelIndex])
+        this.remainingMines.value = this.currentLevel.grid.hiddenMineCount
+
+        this.onResize()
+
+        this.layers.clearLevel()
+
+        for (let [point, cell] of this.currentLevel.grid.content) {
+            let [container, overlay] = cell.makeContainer(this)
+
+            // Position the container at the correct game location
+            // Instead of two layers, this could also use a zOrder trick.
+            // https://github.com/pixijs/pixi.js/issues/3999
+            container.position = point.pixel
+            overlay.position = point.pixel
+
+            this.layers.grid.addChild(container)
+            this.layers.overlay.addChild(overlay)
+        }
+    }
+    makeUi() {
+        this.remainingMines = new Counter(40)
+        this.remainingMines.container.x = 40 + 10
+        this.remainingMines.container.y = 40 * Math.sqrt(3) / 2 + 10
+        this.layers.ui.addChild(this.remainingMines.container)
+
+        this.fullscreenButton.container.scale = new PIXI.Point(40, 40)
+        this.fullscreenButton.container.x = 40 + 10
+        this.fullscreenButton.container.y = 40 * Math.sqrt(3) + 40 + 2 * 10
+        this.layers.ui.addChild(this.fullscreenButton.container)
+    }
+    onResize() {
+        this.app.renderer.resize(this.app.view.width, this.app.view.height)
+
+        this.layers.applyFit(
+            this.currentLevel.grid.fitIntoFrame(this.app.renderer.width, this.app.renderer.height)
+        )
+    }
+    onMineReveal() {
+        this.remainingMines.value = this.remainingMines.value - 1
+    }
+}
+
+class Counter {
+    _value: number = 0
+    caption: PIXI.Text
+    container: PIXI.Container = new PIXI.Container()
+    constructor(public size: number) {
+        // Add a background hexagon to the container
+        let hex = new PIXI.Graphics()
+        hex.beginFill(0x0000FF)
+        hex.drawPolygon(makeHexagon(size))
+        this.container.addChild(hex)
+
+        // Create text
+        this.caption = new PIXI.Text(this._value.toString(), { fontFamily: 'Arial', fontSize: size, fill: 0xFFFFFF, align: 'center' })
+        this.caption.anchor.x = 0.5
+        this.caption.anchor.y = 0.5
+        this.container.addChild(this.caption)
+    }
+    get value(): number {
+        return this._value
+    }
+    set value(new_value: number) {
+        this._value = new_value
+
+        // Remove old caption
+        this.caption.destroy()
+        // Create new caption
+        this.caption = new PIXI.Text(this._value.toString(), { fontFamily: 'Arial', fontSize: this.size, fill: 0xFFFFFF, align: 'center' })
+        this.caption.anchor.x = 0.5
+        this.caption.anchor.y = 0.5
+        this.container.addChild(this.caption)
+    }
+}
+
+class FullscreenButton {
+    _fullscreen: boolean = false
+    container: PIXI.Container = new PIXI.Container()
+    requestFullscreenAction: PIXI.Graphics
+    leaveFullscreenAction: PIXI.Graphics
+    constructor() {
+        console.log("constructed")
+        let gap = 0.2
+        let lineWidth = 0.1
+        {
+            let graphic = new PIXI.Graphics()
+            graphic.lineStyle(lineWidth, 0xFFFFFF)
+            graphic.moveTo(gap, 1)
+                .lineTo(1, 1)
+                .lineTo(1, gap)
+            graphic.moveTo(1, -gap)
+                .lineTo(1, -1)
+                .lineTo(gap, -1)
+            graphic.moveTo(-gap, -1)
+                .lineTo(-1, -1)
+                .lineTo(-1, -gap)
+            graphic.moveTo(-1, gap)
+                .lineTo(-1, 1)
+                .lineTo(-gap, 1)
+            this.container.addChild(graphic)
+            this.requestFullscreenAction = graphic
+        }
+        {
+            let graphic = new PIXI.Graphics()
+            graphic.lineStyle(lineWidth, 0xFFFFFF)
+            graphic.moveTo(gap, 1)
+                .lineTo(gap, gap)
+                .lineTo(1, gap)
+            graphic.moveTo(1, -gap)
+                .lineTo(gap, -gap)
+                .lineTo(gap, -1)
+            graphic.moveTo(-gap, -1)
+                .lineTo(-gap, -gap)
+                .lineTo(-1, -gap)
+            graphic.moveTo(-1, gap)
+                .lineTo(-gap, gap)
+                .lineTo(-gap, 1)
+            this.container.addChild(graphic)
+            this.leaveFullscreenAction = graphic
+        }
+        this.container.interactive = true
+        this.container.hitArea = new PIXI.Rectangle(-1, -1, 2, 2)
+        this.fullscreenActive = this._fullscreen
+        this.requestFullscreenAction.tint = 0xBBBBBB
+        this.leaveFullscreenAction.tint = 0xBBBBBB
+
+        this.container.on("mouseover", () => {
+            this.requestFullscreenAction.tint = 0x808080
+            this.leaveFullscreenAction.tint = 0x808080
+        })
+        this.container.on("mouseout", () => {
+            this.requestFullscreenAction.tint = 0xBBBBBB
+            this.leaveFullscreenAction.tint = 0xBBBBBB
+        })
+    }
+    get fullscreenActive(): boolean {
+        return this._fullscreen
+    }
+    set fullscreenActive(new_value: boolean) {
+        this._fullscreen = new_value
+
+        this.requestFullscreenAction.visible = !this._fullscreen
+        this.leaveFullscreenAction.visible = this._fullscreen
+    }
+    on(event: string, handler: any): void {
+        this.container.on(event, handler)
+    }
+}
+
+// Game setup
 
 let exampleLevelString = "Hexcells level v1\n\
 Basic Example Level\n\
@@ -414,46 +653,6 @@ o+..x...\n\
 ....x...\n\
 ..x+...."
 
-let exampleLevel = parseLevelFile(exampleLevelString)[0]
-let myGrid = new Grid(exampleLevel);
+let game = new Game({ "content": exampleLevelString })
 
-
-// Setup for Pixi
-let app = new PIXI.Application(1000, 600, { backgroundColor: 0xffffff, antialias: true });
-document.body.appendChild(app.view);
-
-// Suppress the context menu
-app.view.addEventListener('contextmenu', (e) => {
-    e.preventDefault();
-});
-
-app.renderer.view.style.border = "1px dashed black";
-
-// Actually rendering my app
-
-
-// Zoom into the level.
-let stage = app.stage;
-
-let [scale, offset] = myGrid.fitIntoFrame(app.renderer.width, app.renderer.height);
-stage.scale = new PIXI.Point(scale, scale);
-stage.x = offset.x;
-stage.y = offset.y;
-
-let cellLayer = new PIXI.Container();
-let overlayLayer = new PIXI.Container();
-app.stage.addChild(cellLayer)
-app.stage.addChild(overlayLayer)
-for (let [point, cell] of myGrid.content) {
-    let [container, overlay] = cell.makeContainer()
-
-    // Position the container at the correct game location
-    // Instead of two layers, this could also use a zOrder trick.
-    // https://github.com/pixijs/pixi.js/issues/3999
-    container.position = point.pixel
-    overlay.position = point.pixel
-
-    cellLayer.addChild(container)
-    overlayLayer.addChild(overlay)
-}
-
+document.body.appendChild(game.app.view);
