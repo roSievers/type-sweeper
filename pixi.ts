@@ -152,7 +152,6 @@ class Grid {
                             thisIsMine = true
                         } else { thisIsMine = false }
 
-                        console.log(lastWasMine, thisIsMine)
                         if (thisIsMine == lastWasMine) { adjacentPairCounter += 1 }
                         lastWasMine = thisIsMine
                     }
@@ -471,16 +470,25 @@ class Game {
     fullscreenButton: FullscreenButton = new FullscreenButton()
     constructor(game_data: LevelFile) {
         this.app = new PIXI.Application(1000, 600, { backgroundColor: 0xffffff, antialias: true });
-        setTimeout(() => {
-            this.app.view.width = 1200
-            this.app.view.height = 720
-            this.onResize()
-        }, 2000)
 
         this.layers = new ContainerLayers(this.app.stage)
 
         // Suppress the context menu
         this.app.view.addEventListener('contextmenu', (e) => { e.preventDefault(); });
+        (<any>this.app.view).onFullscreenStart = () => {
+            let [w, h] = [this.app.view.width, this.app.view.height]
+            this.app.view.width = this.app.view.clientWidth
+            this.app.view.height = this.app.view.clientHeight
+            this.fullscreenButton.fullscreenActive = true
+            this.onResize()
+            return [w, h] // This gets stored in the restoreData of the Fullscreen manager
+        }
+        (<any>this.app.view).onFullscreenClose = (dimensions) => {
+            this.app.view.width = dimensions[0]
+            this.app.view.height = dimensions[1]
+            this.fullscreenButton.fullscreenActive = false
+            this.onResize()
+        }
 
         this.makeUi()
 
@@ -520,6 +528,14 @@ class Game {
         this.fullscreenButton.container.x = 40 + 10
         this.fullscreenButton.container.y = 40 * Math.sqrt(3) + 40 + 2 * 10
         this.layers.ui.addChild(this.fullscreenButton.container)
+
+        this.fullscreenButton.on("click", () => {
+            if (!(<any>document).mozFullScreen) {
+                (<any>this.app.view).mozRequestFullScreen()
+            } else {
+                (<any>document).mozCancelFullScreen()
+            }
+        })
     }
     onResize() {
         this.app.renderer.resize(this.app.view.width, this.app.view.height)
@@ -572,8 +588,7 @@ class FullscreenButton {
     requestFullscreenAction: PIXI.Graphics
     leaveFullscreenAction: PIXI.Graphics
     constructor() {
-        console.log("constructed")
-        let gap = 0.2
+        let gap = 0.4
         let lineWidth = 0.1
         {
             let graphic = new PIXI.Graphics()
@@ -640,6 +655,26 @@ class FullscreenButton {
     }
 }
 
+class FullScreenManager {
+    fullscreenElement: any
+    restoreData: any
+    constructor() {
+        document.addEventListener("mozfullscreenchange", (e) => {
+            if ((<any>document).mozFullScreenElement) {
+                this.fullscreenElement = (<any>document).mozFullScreenElement
+                if (this.fullscreenElement.onFullscreenStart) {
+                    this.restoreData = this.fullscreenElement.onFullscreenStart()
+                }
+            } else {
+                if (this.fullscreenElement.onFullscreenClose) {
+                    this.fullscreenElement.onFullscreenClose(this.restoreData)
+                }
+            }
+        })
+    }
+}
+
+
 // Game setup
 
 let exampleLevelString = "Hexcells level v1\n\
@@ -656,3 +691,5 @@ o+..x...\n\
 let game = new Game({ "content": exampleLevelString })
 
 document.body.appendChild(game.app.view);
+
+let fullScreenManager = new FullScreenManager()
