@@ -90,8 +90,16 @@ class Grid {
         let x = new BoundingInterval();
         let y = new BoundingInterval();
         for (var [point, cell] of this.content) {
-            x.add(point.pixel.x);
-            y.add(point.pixel.y);
+            console.log(cell, isPassiveHint(cell))
+            if (isPassiveHint(cell)) {
+                let offset = cell.boundingCenterOffset
+                x.add(point.pixel.x + offset.x);
+                y.add(point.pixel.y + offset.y);
+                console.log(offset)
+            } else {
+                x.add(point.pixel.x);
+                y.add(point.pixel.y);
+            }
         }
         return { x, y };
     }
@@ -199,7 +207,7 @@ class BoundingInterval {
 
 // This is a “User-Defined Type Guard”
 function isPassiveHint(cell: Cell | PassiveHint): cell is PassiveHint {
-    return (<PassiveHint>cell).lineOverlay !== undefined
+    return (<PassiveHint>cell).lineOverlayVisible !== undefined
 }
 
 class PassiveHint {
@@ -216,6 +224,15 @@ class PassiveHint {
             return 0x000000
         } else {
             return 0xCCCCCC
+        }
+    }
+    get boundingCenterOffset(): PIXI.Point {
+        if (this.direction == "left") {
+            return new PIXI.Point(-0.5, 0.5)
+        } else if (this.direction == "down") {
+            return new PIXI.Point(0, 1)
+        } else {
+            return new PIXI.Point(0.5, -0.5)
         }
     }
     makeContainer(parentGame: Game): [PIXI.Container, PIXI.Graphics] {
@@ -246,10 +263,11 @@ class PassiveHint {
 
         // Add the text
         let virtualFontSize = 256
+        let fontSize = 0.8
         this.text = new PIXI.Text(this.caption, { fontFamily: 'Arial', fontSize: virtualFontSize, fill: 0xFFFFFF, align: 'center' })
         this.text.anchor.x = 0.5
         this.text.anchor.y = 1
-        this.text.scale = new PIXI.Point(0.5 / virtualFontSize, 0.5 / virtualFontSize)
+        this.text.scale = new PIXI.Point(fontSize / virtualFontSize, fontSize / virtualFontSize)
         this.text.position = new PIXI.Point(0, 1 * 0.9)
         this.container.addChild(this.text)
 
