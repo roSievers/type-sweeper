@@ -58,6 +58,9 @@ class GridPoint {
             yield new GridPoint(this.x + x, this.y + y)
         }
     }
+    plus([x, y]: [number, number]) : GridPoint {
+        return new GridPoint(this.x + x, this.y + y)
+    }
 }
 
 class Grid {
@@ -70,7 +73,7 @@ class Grid {
                 if (isParsedCell(cell)) {
                     this.content.set(new GridPoint(j, i), new Cell(cell.revealed, cell.mine, cell.hint))
                 } else if (isParsedPassiveHint(cell)) {
-                    this.content.set(new GridPoint(j, i), new PassiveHint(cell.direction))
+                    this.content.set(new GridPoint(j, i), new PassiveHint(cell.direction, cell.hint))
                 }
             })
         })
@@ -90,12 +93,10 @@ class Grid {
         let x = new BoundingInterval();
         let y = new BoundingInterval();
         for (var [point, cell] of this.content) {
-            console.log(cell, isPassiveHint(cell))
             if (isPassiveHint(cell)) {
                 let offset = cell.boundingCenterOffset
                 x.add(point.pixel.x + offset.x);
                 y.add(point.pixel.y + offset.y);
-                console.log(offset)
             } else {
                 x.add(point.pixel.x);
                 y.add(point.pixel.y);
@@ -121,17 +122,52 @@ class Grid {
     }
     // Precalculate all the captions and store them in the cells.
     makeCaptions(): void {
-        // Right now I only support plain hints
         for (var [point, cell] of this.content) {
             if (isPassiveHint(cell)) {
-
+                let delta = cell.delta
+                let linePoint = point
+                let count = 0
+                let typeState = "initial"
+                while (linePoint.y < 300) {
+                    linePoint = linePoint.plus(delta)
+                    let lineCell = this.content.get(linePoint)
+                    if (isCell(lineCell)) {
+                        if (lineCell.mine) {
+                            count += 1
+                            if (typeState == "initial") {
+                                typeState = "firstGroup"
+                            } else if (typeState == "firstGroupOver") {
+                                typeState = "disjoint"
+                            }
+                        } else {
+                            if (typeState == "firstGroup") {
+                                typeState = "firstGroupOver"
+                            }
+                        }
+                    }
+                }
+                if (cell.hintType == "simple") {
+                    cell.caption = count.toString()
+                } else if (cell.hintType == "typed") {
+                    if (typeState == "disjoint") {
+                        cell.caption = "-" + count.toString() + "-"
+                    } else if (typeState == "firstGroup" || typeState == "firstGroupOver") {
+                        cell.caption = "{" + count.toString() + "}"
+                    } else {
+                        if (count != 0) {
+                            console.error("A row counter with nonzero mine count has invalid typeState.")
+                            cell.caption = "!" + count.toString() + "!"
+                        }
+                        cell.caption = "0"
+                    }
+                }
             } else {
                 if (cell.mine) {
                     if (cell.hintType == "simple") {
                         let count: number = 0;
                         for (let neighbor of point.bigNbhd()) {
                             let nbhdCell = this.content.get(neighbor);
-                            if (nbhdCell != undefined && !isPassiveHint(nbhdCell) && nbhdCell.mine) {
+                            if (isCell(nbhdCell) && nbhdCell.mine) {
                                 count += 1;
                             }
                         }
@@ -207,7 +243,7 @@ class BoundingInterval {
 
 // This is a “User-Defined Type Guard”
 function isPassiveHint(cell: Cell | PassiveHint): cell is PassiveHint {
-    return (<PassiveHint>cell).lineOverlayVisible !== undefined
+    return cell && (<PassiveHint>cell).lineOverlayVisible !== undefined
 }
 
 class PassiveHint {
@@ -218,7 +254,7 @@ class PassiveHint {
     // The overlay which indicates the line they count.
     lineOverlay: PIXI.Graphics
     lineOverlayVisible: boolean = false
-    constructor(public direction: "left" | "down" | "right") { }
+    constructor(public direction: "left" | "down" | "right", public hintType: "simple" | "typed") { }
     get color() {
         if (this.hintEnabled) {
             return 0x000000
@@ -232,7 +268,16 @@ class PassiveHint {
         } else if (this.direction == "down") {
             return new PIXI.Point(0, 1)
         } else {
-            return new PIXI.Point(0.5, -0.5)
+            return new PIXI.Point(0.5, 0.5)
+        }
+    }
+    get delta(): [number, number] {
+        if (this.direction == "left") {
+            return [-1, 1]
+        } else if (this.direction == "down") {
+            return [0, 2]
+        } else {
+            return [1, 1]
         }
     }
     makeContainer(parentGame: Game): [PIXI.Container, PIXI.Graphics] {
@@ -273,16 +318,8 @@ class PassiveHint {
 
         this.container.hitArea = makeHexagon(1)
         this.container.interactive = true
+
         // Hook in event handlers
-        /*
-        this.container.on("mouseover", (event) => {
-            this.hovered = true
-            this.updateGraphicProperties()
-        })
-        this.container.on("mouseout", (event) => {
-            this.hovered = false
-            this.updateGraphicProperties()
-        })*/
         this.container.on("click", (event) => {
             this.lineOverlayVisible = !this.lineOverlayVisible
             this.updateGraphicProperties()
@@ -310,6 +347,12 @@ enum InteractionLevel {
     buttonMode,
     shadowHint,
     noInteraction
+}
+
+
+// This is a “User-Defined Type Guard”
+function isCell(cell: Cell | PassiveHint): cell is Cell {
+    return cell && (<Cell>cell).regionOverlayVisible !== undefined
 }
 
 class Cell {
@@ -807,16 +850,30 @@ class FullScreenManager {
 // Game setup
 
 let exampleLevelString = "Hexcells level v1\n\
-Basic Example Level\n\
+Skewed Tiles 1\n\
 Rolf Sievers\n\
 \n\
-..|+....\n\
-O+..On..\n\
-..x...o.\n\
-o+..x...\n\
-..O+....\n\
-....x...\n\
-..x+...."
+........|c....................\n\
+..|+..........................\n\
+\\+......o+....................\n\
+..x...\\n..o...................\n\
+........x+..x+..|n............\n\
+..........x.......|+..........\n\
+o.......x+..o+..x+............\n\
+..O+......o+......o.../+......\n\
+x+..x+......x+..o...x.........\n\
+..o...\\+../+......x+..........\n\
+O+..On..o...|+..x...o...o.....\n\
+..x.......x.......x.......o...\n\
+....o...o...o+......o+..o+..o+\n\
+..........x+..\\+......\\+..x...\n\
+x+......oc..x+..o.......x...on\n\
+..x.......x.......x.......o+..\n\
+oc..o.......o...x+..o+......x.\n\
+..o+..............o+..........\n\
+o+..............on..x+..o+....\n\
+..................x.......o+..\n\
+....................o...x.....\n"
 
 let game = new Game({ "content": exampleLevelString })
 
