@@ -38,10 +38,17 @@ class GridMap<T> {
 
 class GridPoint {
     constructor(public x: number, public y: number) { }
+    /**
+     * Virtual pixel coordinates which account for the hexagonal shape and
+     * the doubled y axis. This does not account for the zoom which must
+     * be done by another component.
+     */
     get pixel(): PIXI.Point {
         return new PIXI.Point(1.5 * this.x, 0.866 * this.y);
     }
-    // Iterates over all neighboring coordinates, starting to the top going clockwise.
+    /**
+     * Iterates over all neighboring coordinates, starting to the top going clockwise.
+     */
     * nbhd() {
         let nbhdOffsets: Array<[number, number]> = [
             [0, -2], [1, -1], [1, 1], [0, 2], [-1, 1], [-1, -1]]
@@ -49,6 +56,9 @@ class GridPoint {
             yield new GridPoint(this.x + x, this.y + y)
         }
     }
+    /**
+     * Iterates all cells with a distance of at least 2, with no particular order.
+     */
     * bigNbhd() {
         let bigNbhdOffsets: Array<[number, number]> = [
             [-1, -1], [0, -2], [1, -1], [1, 1], [0, 2], [-1, 1], [0, 4],
@@ -58,7 +68,11 @@ class GridPoint {
             yield new GridPoint(this.x + x, this.y + y)
         }
     }
-    plus([x, y]: [number, number]) : GridPoint {
+    /**
+     * Creates a new GridPoint, shifted by the offset
+     * @param param0 Offset in x and y direction.
+     */
+    plus([x, y]: [number, number]): GridPoint {
         return new GridPoint(this.x + x, this.y + y)
     }
 }
