@@ -103,6 +103,11 @@ class Grid {
         }
         return count
     }
+    /**
+     * Calculates pixel bounds which contain the centers of all cells.
+     * The centers of row count hints are shifted to avoid big gaps
+     * at the margins.
+     */
     makeBoundingPoints(): { x: BoundingInterval, y: BoundingInterval } {
         let x = new BoundingInterval();
         let y = new BoundingInterval();
@@ -118,9 +123,13 @@ class Grid {
         }
         return { x, y };
     }
-    // This calculates the transformation which fits the level into a
-    // given frame.
-    fitIntoFrame(width: number, height: number): [number, PIXI.Point] {
+    /**
+     * This calculates the transformation which fits the level into a given frame.
+     * It returns [Zoom factor, offset to center]
+     * @param width Width of the frame in pixels.
+     * @param height Height of the frame in pixels.
+     */
+    fitIntoFrame(width: number, height: number): ZoomTrafo {
         let bounds = this.makeBoundingPoints();
         let xPadding = 2;
         let yPadding = Math.sqrt(3);
@@ -132,9 +141,9 @@ class Grid {
         let xOffset = width / 2 - bounds.x.center * scale;
         let yOffset = height / 2 - bounds.y.center * scale;
 
-        return [scale, new PIXI.Point(xOffset, yOffset)];
+        return new ZoomTrafo(scale, new PIXI.Point(xOffset, yOffset));
     }
-    // Precalculate all the captions and store them in the cells.
+    /** Precalculate all cell captions and store them in the cell objects. */
     makeCaptions(): void {
         for (var [point, cell] of this.content) {
             if (isPassiveHint(cell)) {
@@ -294,10 +303,13 @@ class PassiveHint {
             return [1, 1]
         }
     }
+    /**
+     * Creates the PIXI container and all the contained objects.
+     * The objects are created such that all visual changes can be
+     * applied by only changing properties.
+     * @param parentGame Parent game to pass up reveal & error events
+     */
     makeContainer(parentGame: Game): [PIXI.Container, PIXI.Graphics] {
-        // Creates the PIXI container and all the contained objects.
-        // The objects are creates such that all visual changes can be
-        // applied by only changing properties.
         if (this.container != undefined) {
             console.error("The cell's container should only be initialized once!")
         }
@@ -432,11 +444,13 @@ class Cell {
             return this.revealed
         }
     }
+    /**
+     * Creates the PIXI container and all the contained objects.
+     * The objects are creates such that all visual changes can be
+     * applied by only changing properties.
+     */
     makeContainer(parentGame: Game): [PIXI.Container, PIXI.Graphics] {
         this.parentGame = parentGame
-        // Creates the PIXI container and all the contained objects.
-        // The objects are creates such that all visual changes can be
-        // applied by only changing properties.
         if (this.container != undefined) {
             console.error("The cell's container should only be initialized once!")
         }
@@ -616,11 +630,58 @@ class Level {
     }
 }
 
+/**
+ * The ZoomTrafo class is a simplified transformation which may be applied to
+ * an PIXI.Container.
+ */
+class ZoomTrafo {
+    constructor(public scale: number, public offset: PIXI.Point = new PIXI.Point()) { }
+    /**
+     * Modifies this.offset so that this.apply(point) = point.
+     */
+    set fixPoint(point: PIXI.Point) {
+        this.offset.x = (1 - this.scale) * point.x
+        this.offset.y = (1 - this.scale) * point.y
+        // This verifies the stated property:
+        // this.scale * point.x + this.offset.x
+        // = this.scale * point.x + (1 - this.scale) * point.x
+        // = point.x .
+    }
+    apply(point: PIXI.Point) {
+        return new PIXI.Point(
+            this.scale * point.x + this.offset.x,
+            this.scale * point.y + this.offset.y)
+    }
+    /** Overrides the transformation data on a PIXI.Container.
+     * Use this.after to combine multiple transformations.
+     */
+    scaleContainer(container: PIXI.Container) {
+        container.scale = new PIXI.Point(this.scale, this.scale)
+        container.x = this.offset.x
+        container.y = this.offset.y
+    }
+    /** T.after(S) calculates the transformation that results from
+     * first executing S and then executing T.
+     */
+    after(first: ZoomTrafo) : ZoomTrafo {
+        return new ZoomTrafo(
+            this.scale * first.scale,
+            new PIXI.Point(
+                this.offset.x + this.scale * first.offset.x,
+                this.offset.y + this.scale * first.offset.y
+            )
+        )
+    }
+}
+
 class ContainerLayers {
     ui: PIXI.Container
     overlay: PIXI.Container
     grid: PIXI.Container
     credits: PIXI.Container
+    zoom_level: number = 0
+    userZoom : ZoomTrafo = new ZoomTrafo(1)
+    contentZoom: ZoomTrafo
     constructor(parentContainer: PIXI.Container) {
         this.ui = new PIXI.Container()
         this.overlay = new PIXI.Container()
@@ -636,13 +697,33 @@ class ContainerLayers {
         this.grid.removeChildren()
         this.credits.removeChildren()
     }
-    applyFit([scale, offset]: [number, PIXI.Point]) {
-        this.overlay.scale = new PIXI.Point(scale, scale)
-        this.overlay.x = offset.x
-        this.overlay.y = offset.y
-        this.grid.scale = new PIXI.Point(scale, scale)
-        this.grid.x = offset.x
-        this.grid.y = offset.y
+    applyFit(trafo: ZoomTrafo) {
+        this.contentZoom = trafo
+        this.zoom_level = 0
+        this.userZoom = new ZoomTrafo(1)
+
+        this.applyTransformation(this.contentZoom)
+    }
+    zoomAt(direction: number, position: PIXI.Point) {
+        let zoomStep
+        if (direction < 0) {
+            this.zoom_level++
+            zoomStep = new ZoomTrafo(1.2)
+        } else if (direction > 0) {
+            this.zoom_level--
+            zoomStep = new ZoomTrafo(1 / 1.2)
+        }
+        zoomStep.fixPoint = position
+        let newZoom = zoomStep.after(this.userZoom)
+        // Avoid accumulating floating point errors
+        newZoom.scale = 1.2 ** this.zoom_level
+
+        this.userZoom = newZoom
+        this.applyTransformation(this.userZoom.after(this.contentZoom))
+    }
+    applyTransformation(trafo: ZoomTrafo) {
+        trafo.scaleContainer(this.overlay)
+        trafo.scaleContainer(this.grid)
     }
 }
 
@@ -892,5 +973,11 @@ o+..............on..x+..o+....\n\
 let game = new Game({ "content": exampleLevelString })
 
 document.body.appendChild(game.app.view);
+
+game.app.view.addEventListener("mousedown", (e) => { console.log(e) })
+
+game.app.view.addEventListener("wheel", (e) => {
+    game.layers.zoomAt(e.deltaY, new PIXI.Point(e.clientX, e.clientY))
+})
 
 let fullScreenManager = new FullScreenManager()
