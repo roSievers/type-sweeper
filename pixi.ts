@@ -682,6 +682,8 @@ class ContainerLayers {
     zoom_level: number = 0
     userZoom : ZoomTrafo = new ZoomTrafo(1)
     contentZoom: ZoomTrafo
+    _dragAnchor = undefined
+    shift: ZoomTrafo
     constructor(parentContainer: PIXI.Container) {
         this.ui = new PIXI.Container()
         this.overlay = new PIXI.Container()
@@ -720,6 +722,21 @@ class ContainerLayers {
 
         this.userZoom = newZoom
         this.applyTransformation(this.userZoom.after(this.contentZoom))
+    }
+    set dragAnchor(point) {
+        this._dragAnchor = point
+        if (!point) {
+            this.userZoom = this.shift.after(this.userZoom)
+        }
+    }
+    set dragPoint(point) {
+        this.shift = new ZoomTrafo(1, new PIXI.Point(point.x - this._dragAnchor.x, point.y - this._dragAnchor.y))
+        this.applyTransformation(
+            this.shift.after(this.userZoom.after(this.contentZoom))
+        )
+    }
+    get currentlyDragging() {
+        return this._dragAnchor && true
     }
     applyTransformation(trafo: ZoomTrafo) {
         trafo.scaleContainer(this.overlay)
@@ -974,7 +991,21 @@ let game = new Game({ "content": exampleLevelString })
 
 document.body.appendChild(game.app.view);
 
-game.app.view.addEventListener("mousedown", (e) => { console.log(e) })
+game.app.view.addEventListener("mousedown", (e) => { 
+    if (e.button == 1 || (e.button == 0 && e.ctrlKey)) {
+        game.layers.dragAnchor = {"x": e.clientX, "y": e.clientY}
+    }
+})
+
+game.app.view.addEventListener("mousemove", (e) => {
+    if (game.layers.currentlyDragging) {
+        if (e.buttons & 4 || ((e.buttons & 1) && e.ctrlKey)) {
+            game.layers.dragPoint = new PIXI.Point(e.clientX, e.clientY)
+        } else {
+            game.layers.dragAnchor = undefined
+        }
+    }
+})
 
 game.app.view.addEventListener("wheel", (e) => {
     game.layers.zoomAt(e.deltaY, new PIXI.Point(e.clientX, e.clientY))
