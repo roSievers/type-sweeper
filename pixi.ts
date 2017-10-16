@@ -141,7 +141,7 @@ class Grid {
         let xOffset = width / 2 - bounds.x.center * scale;
         let yOffset = height / 2 - bounds.y.center * scale;
 
-        return new ZoomTrafo(scale, new PIXI.Point(xOffset, yOffset));
+        return new ZoomTrafo(scale, {"x": xOffset, "y": yOffset});
     }
     /** Precalculate all cell captions and store them in the cell objects. */
     makeCaptions(): void {
@@ -285,13 +285,13 @@ class PassiveHint {
             return 0xCCCCCC
         }
     }
-    get boundingCenterOffset(): PIXI.Point {
+    get boundingCenterOffset(): Point {
         if (this.direction == "left") {
-            return new PIXI.Point(-0.5, 0.5)
+            return {"x": -0.5, "y": 0.5}
         } else if (this.direction == "down") {
-            return new PIXI.Point(0, 1)
+            return {"x": 0, "y": 1}
         } else {
-            return new PIXI.Point(0.5, 0.5)
+            return {"x": 0.5, "y": 0.5}
         }
     }
     get delta(): [number, number] {
@@ -560,14 +560,12 @@ class Cell {
 
 function makeHexagon(radius: number = 1): PIXI.Polygon {
     let alpha = Math.sqrt(3) / 2;
-    return new PIXI.Polygon([
-        new PIXI.Point(radius, 0),
-        new PIXI.Point(radius * 0.5, alpha * radius),
-        new PIXI.Point(radius * -0.5, alpha * radius),
-        new PIXI.Point(- radius, 0),
-        new PIXI.Point(radius * -0.5, -alpha * radius),
-        new PIXI.Point(radius * 0.5, -alpha * radius)
-    ]);
+    let points = [
+        [1, 0], [0.5, alpha], [-0.5, alpha],
+        [-1, 0], [-0.5, -alpha], [0.5, -alpha]]
+    return new PIXI.Polygon(
+        points.map(([x, y]) => new PIXI.Point(radius * x, radius * y))
+    )
 }
 
 function makeRegionOverview(): PIXI.Polygon {
