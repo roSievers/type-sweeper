@@ -630,16 +630,21 @@ class Level {
     }
 }
 
+interface Point {
+    x: number,
+    y: number
+}
+
 /**
  * The ZoomTrafo class is a simplified transformation which may be applied to
  * an PIXI.Container.
  */
 class ZoomTrafo {
-    constructor(public scale: number, public offset: PIXI.Point = new PIXI.Point()) { }
+    constructor(public scale: number, public offset: Point = {"x": 0, "y":0}) { }
     /**
      * Modifies this.offset so that this.apply(point) = point.
      */
-    set fixPoint(point: PIXI.Point) {
+    set fixPoint(point: Point) {
         this.offset.x = (1 - this.scale) * point.x
         this.offset.y = (1 - this.scale) * point.y
         // This verifies the stated property:
@@ -647,10 +652,11 @@ class ZoomTrafo {
         // = this.scale * point.x + (1 - this.scale) * point.x
         // = point.x .
     }
-    apply(point: PIXI.Point) {
-        return new PIXI.Point(
-            this.scale * point.x + this.offset.x,
-            this.scale * point.y + this.offset.y)
+    apply(point: Point) {
+        return {
+            "x": this.scale * point.x + this.offset.x,
+            "y": this.scale * point.y + this.offset.y
+        }
     }
     /** Overrides the transformation data on a PIXI.Container.
      * Use this.after to combine multiple transformations.
@@ -666,10 +672,10 @@ class ZoomTrafo {
     after(first: ZoomTrafo) : ZoomTrafo {
         return new ZoomTrafo(
             this.scale * first.scale,
-            new PIXI.Point(
-                this.offset.x + this.scale * first.offset.x,
-                this.offset.y + this.scale * first.offset.y
-            )
+            {
+                "x": this.offset.x + this.scale * first.offset.x,
+                "y": this.offset.y + this.scale * first.offset.y
+            }
         )
     }
 }
@@ -706,7 +712,7 @@ class ContainerLayers {
 
         this.applyTransformation(this.contentZoom)
     }
-    zoomAt(direction: number, position: PIXI.Point) {
+    zoomAt(direction: number, position: Point) {
         let zoomStep
         if (direction < 0) {
             this.zoom_level++
@@ -730,7 +736,7 @@ class ContainerLayers {
         }
     }
     set dragPoint(point) {
-        this.shift = new ZoomTrafo(1, new PIXI.Point(point.x - this._dragAnchor.x, point.y - this._dragAnchor.y))
+        this.shift = new ZoomTrafo(1, {"x": point.x - this._dragAnchor.x, "y": point.y - this._dragAnchor.y})
         this.applyTransformation(
             this.shift.after(this.userZoom.after(this.contentZoom))
         )
@@ -1000,7 +1006,7 @@ game.app.view.addEventListener("mousedown", (e) => {
 game.app.view.addEventListener("mousemove", (e) => {
     if (game.layers.currentlyDragging) {
         if (e.buttons & 4 || ((e.buttons & 1) && e.ctrlKey)) {
-            game.layers.dragPoint = new PIXI.Point(e.clientX, e.clientY)
+            game.layers.dragPoint = {"x": e.clientX, "y": e.clientY}
         } else {
             game.layers.dragAnchor = undefined
         }
@@ -1008,7 +1014,7 @@ game.app.view.addEventListener("mousemove", (e) => {
 })
 
 game.app.view.addEventListener("wheel", (e) => {
-    game.layers.zoomAt(e.deltaY, new PIXI.Point(e.clientX, e.clientY))
+    game.layers.zoomAt(e.deltaY, {"x": e.clientX, "y": e.clientY})
 })
 
 let fullScreenManager = new FullScreenManager()
