@@ -1,5 +1,7 @@
 # Elm-Sweeper rewritten in Typescript
 
+Discontinued, uploaded for a friend.
+
 ## Ideas to differentiate from Hexcells
 
 - Longer text available for custom rules
